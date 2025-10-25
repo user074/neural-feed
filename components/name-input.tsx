@@ -29,7 +29,7 @@ export function NameInput({ value, onChange, onSubmit, disabled }: NameInputProp
             type="text"
             value={value}
             onChange={(event) => onChange(event.target.value)}
-            placeholder='Your name (e.g., "Jianing Qi")'
+            placeholder='Your name (e.g., "Ilya Sutskever")'
             className="flex-1 rounded-lg border border-slate-600/70 bg-slate-950/80 px-4 py-3 text-base text-white placeholder-slate-500 focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-500/40"
             disabled={disabled}
           />

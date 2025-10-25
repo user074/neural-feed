@@ -9,7 +9,7 @@ Neural Feed is a web-based autonomous agent system that builds a personalized co
 1. **Searches** the open web to identify the user
 2. **Gathers** public data from GitHub, LinkedIn, websites, and news sources
 3. **Summarizes** the data into an LLM-based profile
-4. **Fetches** and ranks current papers, repositories, and news using AI
+4. **Fetches** and ranks current papers, discussions, and news/blogs using AI
 5. **Delivers** an evolving, explainable feed — your daily, AI-curated window into the world
 
 ## Features
@@ -17,8 +17,9 @@ Neural Feed is a web-based autonomous agent system that builds a personalized co
 - 🔍 **Autonomous Discovery**: Automatically identifies and researches individuals
 - 📊 **Multi-Source Harvesting**: Gathers data from GitHub, LinkedIn, websites, and news
 - 🤖 **AI-Powered Profiling**: Creates intelligent summaries using LLM technology
-- 📚 **Content Curation**: Finds and ranks papers, repos, and news articles
+- 📚 **Content Curation**: Finds and ranks papers, community discussions, and news/blog articles
 - 🎯 **Explainable Results**: Each item includes relevance explanations
+- 🎛️ **Weighted Personalization**: Learns keyword and source emphasis from harvested evidence
 - 📡 **Real-time Streaming**: Watch the agent work through a live activity log
 - 🎨 **Minimal UI**: Clean, focused interface with maximum content value
 
@@ -26,7 +27,7 @@ Neural Feed is a web-based autonomous agent system that builds a personalized co
 
 ### Prerequisites
 
-- Node.js 18+ and npm
+- Node.js 20.17.0 (see `.nvmrc`) and npm
 
 ### Installation
 
@@ -41,21 +42,16 @@ cd neural-feed
 npm install
 ```
 
-3. (Optional) Set up environment variables:
+3. Set up environment variables:
 ```bash
 cp .env.example .env.local
-# Edit .env.local with your API keys if using real API integrations
+# Edit .env.local with your API keys (see table below)
 ```
 
 4. Run the development server:
 
-Note:
- Next steps:
-
-  1. Run nvm use (or enable automatic .nvmrc loading via your shell) before development commands so Node 20 stays active.
-  2. If you use a global default, consider updating ~/.nvm/alias/default to 20.17.0 outside the sandbox.
-  
 ```bash
+nvm use
 npm run dev
 ```
 
@@ -64,7 +60,7 @@ npm run dev
 ### Usage
 
 1. Enter a name in the input field (e.g., "Andrej Karpathy")
-2. Click "Generate Feed" or press Enter
+2. Click "Find me" or press Enter
 3. Watch the agent log as it:
    - Searches and identifies the person
    - Harvests data from multiple sources
@@ -93,15 +89,11 @@ npm run dev
 
 ### Current Implementation
 
-This version includes a complete mock implementation that demonstrates the full agent workflow. To integrate with real services:
-
-1. Add API keys to `.env.local`:
-   - OpenAI API key for LLM features
-   - GitHub API token for repository data
-   - News API key for news articles
-   - ArXiv API for academic papers
-
-2. Replace mock data sources in `/app/api/feed/route.ts` with actual API calls
+The agent now connects to live services end-to-end:
+- **Google Custom Search API** – identity discovery across the open web
+- **GitHub REST API** – public profile context and repository stats
+- **OpenAI Responses API** – profile synthesis, feed ranking, and deepen digests
+- **arXiv Atom**, **HN Algolia**, and **Google News/blog queries** – candidate feed items
 
 ## Development
 
@@ -119,9 +111,20 @@ npm start
 npm run lint
 ```
 
+## Environment Variables
+
+| Variable | Required | Description |
+| --- | --- | --- |
+| `GOOGLE_SEARCH_API_KEY` | Yes | Google Custom Search API key for candidate discovery. |
+| `GOOGLE_SEARCH_CX` | Yes | Search engine identifier (CX) for Custom Search. |
+| `OPENAI_API_KEY` | Yes (for profile, ranking, deepen) | OpenAI API key with access to the Responses API. |
+| `GITHUB_TOKEN` | Optional | GitHub personal access token for higher rate limits during harvesting and repo search. |
+
+When a key is omitted, the agent falls back to deterministic heuristics for that capability.
+
 ## Future Enhancements
 
-- [ ] Real API integrations (OpenAI, GitHub, LinkedIn, News APIs)
+- [ ] Enriched LinkedIn parsing with resilient fetch
 - [ ] User authentication and saved feeds
 - [ ] Feed history and evolution tracking
 - [ ] Customizable sources and preferences

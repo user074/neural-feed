@@ -11,7 +11,6 @@ interface CandidateGalleryProps {
 
 const sourceCopy: Record<CandidateProfile['source'], string> = {
   github: 'GitHub',
-  linkedin: 'LinkedIn',
   site: 'Website',
 };
 
@@ -59,11 +58,28 @@ export function CandidateGallery({
                       {sourceCopy[candidate.source]}
                     </span>
                   </div>
-                  <p className="text-xs text-slate-400">{candidate.location}</p>
+                  {candidate.location ? <p className="text-xs text-slate-400">{candidate.location}</p> : null}
                 </div>
               </div>
-              <p className="text-sm text-slate-300">{candidate.headline}</p>
+              <p className="text-sm text-slate-300">
+                {candidate.summary ?? candidate.headline ?? 'Candidate identified from search results.'}
+              </p>
               <p className="text-xs text-slate-500 truncate">{candidate.profileUrl}</p>
+              {candidate.mergedFrom && candidate.mergedFrom.length > 1 ? (
+                <div className="mt-2 space-y-1 rounded-lg border border-slate-800 bg-slate-900/70 p-2">
+                  <p className="text-[11px] uppercase tracking-wide text-slate-500">Merged sources</p>
+                  <ul className="space-y-1">
+                    {candidate.mergedFrom.slice(0, 3).map(source => (
+                      <li key={source.url} className="text-[12px] text-slate-400">
+                        <span className="line-clamp-1">{source.title ?? source.url}</span>
+                      </li>
+                    ))}
+                    {candidate.mergedFrom.length > 3 ? (
+                      <li className="text-[12px] text-slate-500">+{candidate.mergedFrom.length - 3} more</li>
+                    ) : null}
+                  </ul>
+                </div>
+              ) : null}
             </button>
           );
         })}

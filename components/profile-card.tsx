@@ -56,6 +56,16 @@ export function ProfileCard({ profile }: ProfileCardProps) {
 
   const toggleEvidence = () => setEvidenceOpen((prev) => !prev);
 
+  const weightedKeywords = (profile.keywordWeights && profile.keywordWeights.length > 0
+    ? [...profile.keywordWeights]
+    : profile.keywords.map(keyword => ({ keyword, weight: 1 })))
+    .sort((a, b) => (b.weight ?? 0) - (a.weight ?? 0))
+    .slice(0, 10);
+
+  const sourceFocusEntries = profile.sourceFocus
+    ? Object.entries(profile.sourceFocus).sort((a, b) => (b[1] ?? 0) - (a[1] ?? 0))
+    : [];
+
   return (
     <section className="rounded-2xl border border-slate-700/60 bg-slate-950/70 p-6 shadow-lg">
       <header className="mb-4 space-y-1">
@@ -67,12 +77,16 @@ export function ProfileCard({ profile }: ProfileCardProps) {
       <div className="mt-6 space-y-2">
         <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-300">Keywords</h3>
         <div className="flex flex-wrap gap-2">
-          {profile.keywords.map((keyword) => (
+          {weightedKeywords.map(({ keyword, weight }) => (
             <span
               key={keyword}
               className="rounded-full border border-sky-500/50 bg-sky-500/10 px-3 py-1 text-xs font-medium text-sky-100"
+              title={weight !== undefined ? `Weight: ${(weight * 100).toFixed(0)}%` : undefined}
             >
               {keyword}
+              {weight !== undefined ? (
+                <span className="ml-1 text-[10px] text-sky-300/80">{Math.round(weight * 100)}%</span>
+              ) : null}
             </span>
           ))}
         </div>
@@ -92,14 +106,47 @@ export function ProfileCard({ profile }: ProfileCardProps) {
               <div className="h-2 w-full rounded-full bg-slate-800/80">
                 <div
                   className="h-2 rounded-full bg-sky-500 transition-all"
-                  style={{ width: config.width[preference] }}
+                  style={{ width: config.width[preference as keyof typeof config.width] || '50%' }}
                 />
               </div>
-              <p className="text-xs text-slate-400">{config.hints[preference]}</p>
+              <p className="text-xs text-slate-400">{config.hints[preference as keyof typeof config.hints] || ''}</p>
             </div>
           );
         })}
       </div>
+
+      {profile.preferenceNotes ? (
+        <div className="mt-6 space-y-2">
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-300">Preference Notes</h3>
+          <p className="text-sm text-slate-300">{profile.preferenceNotes}</p>
+        </div>
+      ) : null}
+
+      {sourceFocusEntries.length > 0 ? (
+        <div className="mt-6 space-y-3">
+          <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-300">Source Focus</h3>
+          <div className="space-y-2">
+            {sourceFocusEntries.map(([source, value]) => {
+              const clamped = Math.max(0, Math.min(1, value));
+              const percent = Math.round(clamped * 100);
+              return (
+                <div key={source} className="space-y-1">
+                  <div className="flex items-center justify-between text-xs text-slate-400">
+                    <span>{source}</span>
+                    <span className="text-slate-200">{percent}%</span>
+                  </div>
+                  <div className="h-2 w-full rounded-full bg-slate-800/80">
+                    <div
+                      className="h-2 rounded-full bg-emerald-500 transition-all"
+                      style={{ width: `${percent}%` }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
 
       <div className="mt-6 border-t border-slate-800 pt-4">
         <button

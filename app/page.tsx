@@ -8,10 +8,12 @@ import { FeedList } from '../components/feed-list';
 import { HarvestSkeleton } from '../components/harvest-skeleton';
 import { ProfileCard } from '../components/profile-card';
 import { NameInput } from '../components/name-input';
+import { CandidatePool } from '../components/candidate-pool';
 import {
   AgentState,
   CandidateProfile,
   DeepenDigest,
+  CandidatePoolItem,
   FeedItem,
   LogEntry,
   LogLevel,
@@ -47,6 +49,10 @@ export default function Home() {
   const [selectedCandidate, setSelectedCandidate] = useState<CandidateProfile | null>(null);
   const [profileCard, setProfileCard] = useState<ProfileCardData | null>(null);
   const [feedItems, setFeedItems] = useState<FeedItem[]>([]);
+  const [explorationItems, setExplorationItems] = useState<FeedItem[]>([]);
+  const [candidatePool, setCandidatePool] = useState<CandidatePoolItem[]>([]);
+  const [remainingItems, setRemainingItems] = useState<CandidatePoolItem[]>([]);
+  const [planMeta, setPlanMeta] = useState<{ mode: string; plan: Record<string, string[]> } | null>(null);
 
   const [drawerItem, setDrawerItem] = useState<FeedItem | null>(null);
   const [drawerDigest, setDrawerDigest] = useState<DeepenDigest | null>(null);
@@ -92,7 +98,19 @@ export default function Home() {
         }
         case 'feed': {
           const items = Array.isArray(payload.items) ? (payload.items as FeedItem[]) : [];
+          const exploration = Array.isArray(payload.explorationItems) ? (payload.explorationItems as FeedItem[]) : [];
+          const remaining = Array.isArray(payload.remaining) ? (payload.remaining as CandidatePoolItem[]) : [];
           setFeedItems(items.slice(0, 10));
+          setExplorationItems(exploration);
+          setRemainingItems(remaining);
+          break;
+        }
+        case 'candidate_pool': {
+          const poolItems = Array.isArray(payload.items) ? (payload.items as CandidatePoolItem[]) : [];
+          const plan = (payload.plan as Record<string, string[]>) ?? {};
+          const mode = (payload.mode as string) ?? 'fallback';
+          setCandidatePool(poolItems);
+          setPlanMeta({ mode, plan });
           break;
         }
         case 'error': {
@@ -226,6 +244,10 @@ export default function Home() {
     setSelectedCandidate(null);
     setProfileCard(null);
     setFeedItems([]);
+    setExplorationItems([]);
+    setCandidatePool([]);
+    setRemainingItems([]);
+    setPlanMeta(null);
     setDrawerItem(null);
     setDrawerDigest(null);
 
@@ -239,6 +261,10 @@ export default function Home() {
     setError(null);
     setProfileCard(null);
     setFeedItems([]);
+    setExplorationItems([]);
+    setCandidatePool([]);
+    setRemainingItems([]);
+    setPlanMeta(null);
     setDrawerItem(null);
     setDrawerDigest(null);
     await startRun(name.trim(), selectedCandidate.id);
@@ -306,7 +332,36 @@ export default function Home() {
 
           {profileCard ? <ProfileCard profile={profileCard} /> : null}
 
-          {feedItems.length > 0 ? <FeedList items={feedItems} onDeepen={handleDeepen} /> : null}
+          {feedItems.length > 0 ? (
+            <FeedList items={feedItems} explorationItems={explorationItems} onDeepen={handleDeepen} />
+          ) : null}
+
+          {planMeta ? (
+            <section className="rounded-2xl border border-slate-700/60 bg-slate-950/70 p-6 shadow-lg">
+              <header className="mb-4">
+                <h2 className="text-xl font-semibold text-white">Query Plan</h2>
+                <p className="text-sm text-slate-400">
+                  Mode: {planMeta.mode === 'llm' ? 'LLM-crafted queries' : 'Keyword fallback'}
+                </p>
+              </header>
+              <div className="grid gap-4 sm:grid-cols-3">
+                {Object.entries(planMeta.plan).map(([source, queries]) => (
+                  <div key={source} className="rounded-xl border border-slate-800 bg-slate-900/70 p-4">
+                    <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-300">{source}</h3>
+                    <ul className="mt-2 space-y-2 text-xs text-slate-300">
+                      {queries.slice(0, 4).map((query) => (
+                        <li key={query} className="line-clamp-2">{query}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          {(candidatePool.length > 0 || remainingItems.length > 0) ? (
+            <CandidatePool pool={candidatePool} remainder={remainingItems} />
+          ) : null}
 
           {!isDiscovering && !isRunning && logs.length === 0 && (
             <div className="rounded-2xl border border-dashed border-slate-700/60 bg-slate-950/60 p-8 text-center text-slate-400">

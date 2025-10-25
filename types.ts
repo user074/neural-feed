@@ -10,11 +10,18 @@ export interface LogEntry {
 export interface CandidateProfile {
   id: string;
   displayName: string;
-  source: 'github' | 'linkedin' | 'site';
-  headline: string;
-  location: string;
+  source: 'github' | 'site';
+  headline?: string;
+  location?: string;
   avatarUrl: string;
   profileUrl: string;
+  summary?: string;
+  supportUrls?: string[];
+  mergedFrom?: Array<{
+    url: string;
+    title?: string;
+    description?: string;
+  }>;
 }
 
 export interface ProfileCardData {
@@ -30,6 +37,13 @@ export interface ProfileCardData {
     claim: string;
     support_url: string;
   }>;
+  keywordWeights?: Array<{
+    keyword: string;
+    weight: number;
+    rationale?: string;
+  }>;
+  sourceFocus?: Record<string, number>;
+  preferenceNotes?: string;
 }
 
 export type FeedSource = 'arxiv' | 'hn' | 'github' | 'news';
@@ -40,6 +54,15 @@ export interface FeedItem {
   title: string;
   summary: string;
   because: string;
+  url: string;
+  date: string;
+}
+
+export interface CandidatePoolItem {
+  id: string;
+  source: FeedSource;
+  title: string;
+  snippet: string;
   url: string;
   date: string;
 }

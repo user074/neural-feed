@@ -48,6 +48,13 @@ cp .env.example .env.local
 ```
 
 4. Run the development server:
+
+Note:
+ Next steps:
+
+  1. Run nvm use (or enable automatic .nvmrc loading via your shell) before development commands so Node 20 stays active.
+  2. If you use a global default, consider updating ~/.nvm/alias/default to 20.17.0 outside the sandbox.
+  
 ```bash
 npm run dev
 ```

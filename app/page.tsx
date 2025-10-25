@@ -1,188 +1,332 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
+import { AgentLog } from '../components/agent-log';
+import { CandidateGallery } from '../components/candidate-gallery';
+import { DeepenDrawer } from '../components/deepen-drawer';
+import { FeedList } from '../components/feed-list';
+import { HarvestSkeleton } from '../components/harvest-skeleton';
+import { ProfileCard } from '../components/profile-card';
+import { NameInput } from '../components/name-input';
+import {
+  AgentState,
+  CandidateProfile,
+  DeepenDigest,
+  FeedItem,
+  LogEntry,
+  LogLevel,
+  ProfileCardData,
+} from '../types';
 
-interface LogEntry {
-  id: number;
-  message: string;
-  type: 'info' | 'success' | 'error' | 'warning';
-  timestamp: string;
+type Phase = 'discover' | 'run';
+
+interface StreamPayload {
+  type: string;
+  [key: string]: unknown;
 }
 
-interface FeedItem {
-  title: string;
-  description: string;
-  source: string;
-  url?: string;
-  relevance: string;
-}
+const stageLabelMap: Partial<Record<AgentState, string>> = {
+  DiscoverCandidates: 'Discover',
+  AwaitUserConfirm: 'Await Confirm',
+  ResolveEntities: 'Resolve',
+  HarvestPublicData: 'Harvest',
+  BuildProfile: 'Profile',
+  FetchCandidates: 'Fetch',
+  RankAndExplain: 'Rank',
+};
 
 export default function Home() {
   const [name, setName] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
   const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [agentState, setAgentState] = useState<AgentState | null>(null);
+  const [isDiscovering, setIsDiscovering] = useState(false);
+  const [isRunning, setIsRunning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const [candidates, setCandidates] = useState<CandidateProfile[]>([]);
+  const [selectedCandidate, setSelectedCandidate] = useState<CandidateProfile | null>(null);
+  const [profileCard, setProfileCard] = useState<ProfileCardData | null>(null);
   const [feedItems, setFeedItems] = useState<FeedItem[]>([]);
-  const [profile, setProfile] = useState('');
 
-  const addLog = (message: string, type: LogEntry['type'] = 'info') => {
-    const timestamp = new Date().toLocaleTimeString();
-    setLogs(prev => [...prev, { id: Date.now(), message, type, timestamp }]);
-  };
+  const [drawerItem, setDrawerItem] = useState<FeedItem | null>(null);
+  const [drawerDigest, setDrawerDigest] = useState<DeepenDigest | null>(null);
+  const [isDrawerLoading, setIsDrawerLoading] = useState(false);
 
-  const generateFeed = async () => {
-    if (!name.trim()) {
-      addLog('Please enter a name', 'error');
-      return;
-    }
+  const appendLog = useCallback((message: string, level: LogLevel = 'info') => {
+    setLogs((prev) => [
+      ...prev,
+      {
+        id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        message,
+        level,
+        timestamp: new Date().toLocaleTimeString(),
+      },
+    ]);
+  }, []);
 
-    setIsLoading(true);
-    setLogs([]);
-    setFeedItems([]);
-    setProfile('');
-
-    addLog(`Starting feed generation for: ${name}`, 'info');
-
-    try {
-      const response = await fetch('/api/feed', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ name }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to generate feed');
+  const handleStreamEvent = useCallback(
+    (payload: StreamPayload, phase: Phase) => {
+      switch (payload.type) {
+        case 'log': {
+          appendLog(String(payload.message ?? ''), (payload.level as LogLevel) ?? 'info');
+          break;
+        }
+        case 'stage': {
+          const state = payload.state as AgentState;
+          if (state) {
+            setAgentState(state);
+          }
+          break;
+        }
+        case 'candidates': {
+          const candidatePayload = Array.isArray(payload.candidates) ? payload.candidates : [];
+          setCandidates(candidatePayload as CandidateProfile[]);
+          if (candidatePayload.length === 0) {
+            setError('No confident identity found. Provide a GitHub handle or public bio snippet.');
+          }
+          break;
+        }
+        case 'profile': {
+          setProfileCard(payload.profileCard as ProfileCardData);
+          break;
+        }
+        case 'feed': {
+          const items = Array.isArray(payload.items) ? (payload.items as FeedItem[]) : [];
+          setFeedItems(items.slice(0, 10));
+          break;
+        }
+        case 'error': {
+          const message = String(payload.message ?? 'Unknown error');
+          setError(message);
+          appendLog(message, 'error');
+          if (phase === 'discover') {
+            setIsDiscovering(false);
+          } else {
+            setIsRunning(false);
+          }
+          break;
+        }
+        case 'complete': {
+          if (phase === 'discover') {
+            setIsDiscovering(false);
+          } else {
+            setIsRunning(false);
+          }
+          break;
+        }
+        default:
+          break;
       }
+    },
+    [appendLog],
+  );
 
-      const reader = response.body?.getReader();
+  const readStream = useCallback(
+    async (response: Response, phase: Phase) => {
+      if (!response.body) {
+        throw new Error('Stream unavailable.');
+      }
+      const reader = response.body.getReader();
       const decoder = new TextDecoder();
-
-      if (!reader) {
-        throw new Error('No response body');
-      }
+      let buffer = '';
 
       while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+        const { value, done } = await reader.read();
+        if (done) {
+          break;
+        }
+        buffer += decoder.decode(value, { stream: true });
 
-        const chunk = decoder.decode(value);
-        const lines = chunk.split('\n');
+        const segments = buffer.split('\n\n');
+        buffer = segments.pop() ?? '';
 
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6));
-              
-              if (data.type === 'log') {
-                addLog(data.message, data.level || 'info');
-              } else if (data.type === 'profile') {
-                setProfile(data.content);
-              } else if (data.type === 'feed') {
-                setFeedItems(data.items);
-              } else if (data.type === 'complete') {
-                addLog('Feed generation complete!', 'success');
-              } else if (data.type === 'error') {
-                addLog(data.message, 'error');
-              }
-            } catch (e) {
-              // Skip invalid JSON lines (e.g., empty lines or partial chunks)
-              if (process.env.NODE_ENV === 'development') {
-                console.debug('Skipped invalid JSON chunk:', line);
-              }
+        for (const segment of segments) {
+          const line = segment.trim();
+          if (!line.startsWith('data: ')) {
+            continue;
+          }
+          const json = line.slice(6);
+          try {
+            const payload = JSON.parse(json) as StreamPayload;
+            handleStreamEvent(payload, phase);
+          } catch (err) {
+            if (process.env.NODE_ENV === 'development') {
+              console.warn('Failed to parse SSE payload', err);
             }
           }
         }
       }
-    } catch (error) {
-      addLog(`Error: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error');
-    } finally {
-      setIsLoading(false);
+    },
+    [handleStreamEvent],
+  );
+
+  const startDiscover = useCallback(
+    async (targetName: string) => {
+      setIsDiscovering(true);
+      try {
+        const response = await fetch('/api/feed?phase=discover', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ name: targetName }),
+        });
+        if (!response.ok) {
+          throw new Error('Failed to discover candidates.');
+        }
+        await readStream(response, 'discover');
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to start discovery.';
+        setError(message);
+        appendLog(message, 'error');
+      } finally {
+        setIsDiscovering(false);
+      }
+    },
+    [appendLog, readStream],
+  );
+
+  const startRun = useCallback(
+    async (targetName: string, candidateId: string) => {
+      setIsRunning(true);
+      try {
+        const response = await fetch('/api/feed?phase=run', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ name: targetName, candidateId }),
+        });
+        if (!response.ok) {
+          throw new Error('Failed to run harvesting pipeline.');
+        }
+        await readStream(response, 'run');
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Pipeline run failed.';
+        setError(message);
+        appendLog(message, 'error');
+      } finally {
+        setIsRunning(false);
+      }
+    },
+    [appendLog, readStream],
+  );
+
+  const handleFind = useCallback(async () => {
+    if (!name.trim()) {
+      setError('Please enter a name.');
+      appendLog('Please enter a name.', 'error');
+      return;
     }
-  };
+
+    setError(null);
+    setLogs([]);
+    setAgentState(null);
+    setCandidates([]);
+    setSelectedCandidate(null);
+    setProfileCard(null);
+    setFeedItems([]);
+    setDrawerItem(null);
+    setDrawerDigest(null);
+
+    await startDiscover(name.trim());
+  }, [appendLog, name, startDiscover]);
+
+  const handleConfirmCandidate = useCallback(async () => {
+    if (!selectedCandidate) {
+      return;
+    }
+    setError(null);
+    setProfileCard(null);
+    setFeedItems([]);
+    setDrawerItem(null);
+    setDrawerDigest(null);
+    await startRun(name.trim(), selectedCandidate.id);
+  }, [name, selectedCandidate, startRun]);
+
+  const handleDeepen = useCallback(
+    async (item: FeedItem) => {
+      setDrawerItem(item);
+      setDrawerDigest(null);
+      setIsDrawerLoading(true);
+      try {
+        const params = new URLSearchParams({
+          itemId: item.id,
+          name: name.trim() || 'You',
+        });
+        const response = await fetch(`/api/feed?${params.toString()}`, {
+          method: 'GET',
+        });
+        if (!response.ok) {
+          throw new Error('Failed to load deepen digest.');
+        }
+        const digest = (await response.json()) as DeepenDigest;
+        setDrawerDigest(digest);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Unable to load deepen digest.';
+        setError(message);
+        appendLog(message, 'error');
+      } finally {
+        setIsDrawerLoading(false);
+      }
+    },
+    [appendLog, name],
+  );
+
+  const stageLabel = useMemo(() => {
+    if (!agentState) {
+      return null;
+    }
+    return stageLabelMap[agentState] ?? agentState.replace(/([A-Z])/g, ' $1').trim();
+  }, [agentState]);
 
   return (
-    <main className="min-h-screen p-8 max-w-7xl mx-auto">
-      <div className="mb-8">
-        <h1 className="text-4xl font-bold mb-2">Neural Feed</h1>
-        <p className="text-gray-400">
-          Your own feed curated by AI agents. Enter a name to discover, harvest, summarize, and curate personalized content.
-        </p>
+    <main className="min-h-screen bg-gradient-to-b from-slate-950 via-slate-950 to-slate-900 px-4 py-10 text-white sm:px-8 lg:px-12">
+      <div className="mx-auto grid w-full max-w-7xl gap-6 lg:grid-cols-[minmax(0,1fr)_320px] xl:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="space-y-6">
+          <NameInput value={name} onChange={setName} onSubmit={handleFind} disabled={isDiscovering || isRunning} />
+
+          {error && (
+            <div className="rounded-xl border border-rose-500/40 bg-rose-500/10 p-4 text-sm text-rose-200">
+              {error}
+            </div>
+          )}
+
+          {candidates.length > 0 && (
+            <CandidateGallery
+              candidates={candidates}
+              selectedId={selectedCandidate?.id ?? null}
+              onSelect={(candidate) => setSelectedCandidate(candidate)}
+              onConfirm={handleConfirmCandidate}
+              isConfirming={isRunning}
+            />
+          )}
+
+          {isRunning && !profileCard ? <HarvestSkeleton /> : null}
+
+          {profileCard ? <ProfileCard profile={profileCard} /> : null}
+
+          {feedItems.length > 0 ? <FeedList items={feedItems} onDeepen={handleDeepen} /> : null}
+
+          {!isDiscovering && !isRunning && logs.length === 0 && (
+            <div className="rounded-2xl border border-dashed border-slate-700/60 bg-slate-950/60 p-8 text-center text-slate-400">
+              Enter a name to kick off the agent-driven discovery.
+            </div>
+          )}
+        </div>
+
+        <AgentLog entries={logs} stage={stageLabel} />
       </div>
 
-      <div className="mb-8">
-        <div className="flex gap-4">
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && !isLoading && generateFeed()}
-            placeholder="Enter a name (e.g., 'Andrej Karpathy')"
-            className="flex-1 px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:border-blue-500"
-            disabled={isLoading}
-          />
-          <button
-            onClick={generateFeed}
-            disabled={isLoading}
-            className="px-6 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 rounded-lg font-medium transition-colors"
-          >
-            {isLoading ? 'Generating...' : 'Generate Feed'}
-          </button>
-        </div>
-      </div>
-
-      {logs.length > 0 && (
-        <div className="mb-8 bg-gray-900 rounded-lg p-4 border border-gray-800">
-          <h2 className="text-xl font-semibold mb-3">Agent Log</h2>
-          <div className="space-y-1 max-h-96 overflow-y-auto">
-            {logs.map((log) => (
-              <div key={log.id} className={`log-entry ${log.type}`}>
-                <span className="text-gray-500">[{log.timestamp}]</span> {log.message}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {profile && (
-        <div className="mb-8 bg-gray-900 rounded-lg p-6 border border-gray-800">
-          <h2 className="text-xl font-semibold mb-3">Profile Summary</h2>
-          <p className="text-gray-300 whitespace-pre-wrap">{profile}</p>
-        </div>
-      )}
-
-      {feedItems.length > 0 && (
-        <div className="bg-gray-900 rounded-lg p-6 border border-gray-800">
-          <h2 className="text-xl font-semibold mb-4">Curated Feed</h2>
-          <div className="space-y-4">
-            {feedItems.map((item, index) => (
-              <div key={index} className="border-b border-gray-800 pb-4 last:border-b-0">
-                <h3 className="text-lg font-medium text-blue-400 mb-1">
-                  {item.url ? (
-                    <a href={item.url} target="_blank" rel="noopener noreferrer" className="hover:underline">
-                      {item.title}
-                    </a>
-                  ) : (
-                    item.title
-                  )}
-                </h3>
-                <p className="text-gray-300 mb-2">{item.description}</p>
-                <div className="flex gap-4 text-sm text-gray-500">
-                  <span>Source: {item.source}</span>
-                  <span>•</span>
-                  <span>Relevance: {item.relevance}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {!isLoading && logs.length === 0 && (
-        <div className="text-center text-gray-500 py-12">
-          <p>Enter a name above to start generating your personalized feed</p>
-        </div>
-      )}
+      <DeepenDrawer
+        item={drawerItem}
+        digest={drawerDigest}
+        isLoading={isDrawerLoading}
+        onClose={() => {
+          setDrawerItem(null);
+          setDrawerDigest(null);
+        }}
+      />
     </main>
   );
 }

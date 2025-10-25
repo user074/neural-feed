@@ -1,5 +1,23 @@
 import { NextRequest } from 'next/server';
 
+// Type definitions
+interface GithubRepo {
+  name: string;
+  stars: number;
+  description: string;
+}
+
+interface GithubData {
+  repos: GithubRepo[];
+  activity: string;
+}
+
+interface LinkedInData {
+  currentRole: string;
+  company: string;
+  interests: string[];
+}
+
 // Mock data sources - in a real implementation, these would call actual APIs
 const mockSearchResults = (name: string) => ({
   github: `https://github.com/${name.toLowerCase().replace(/\s+/g, '-')}`,
@@ -7,7 +25,7 @@ const mockSearchResults = (name: string) => ({
   website: `https://${name.toLowerCase().replace(/\s+/g, '')}.com`,
 });
 
-const mockGithubData = (name: string) => ({
+const mockGithubData = (name: string): GithubData => ({
   repos: [
     { name: 'neural-networks', stars: 1234, description: 'Deep learning implementations' },
     { name: 'ml-toolkit', stars: 567, description: 'Machine learning utilities' },
@@ -15,7 +33,7 @@ const mockGithubData = (name: string) => ({
   activity: 'Active contributor with focus on AI/ML projects',
 });
 
-const mockLinkedInData = (name: string) => ({
+const mockLinkedInData = (name: string): LinkedInData => ({
   currentRole: 'AI Research Scientist',
   company: 'Tech Company',
   interests: ['Machine Learning', 'Neural Networks', 'Computer Vision'],
@@ -73,10 +91,10 @@ const mockNews = (interests: string[]) => [
 ];
 
 // Simulated LLM profile generation
-const generateProfile = (name: string, githubData: any, linkedInData: any) => {
+const generateProfile = (name: string, githubData: GithubData, linkedInData: LinkedInData): string => {
   return `${name} is an ${linkedInData.currentRole} at ${linkedInData.company} with a strong focus on ${linkedInData.interests.join(', ')}. 
 
-Active on GitHub with notable projects including ${githubData.repos.map((r: any) => r.name).join(' and ')}, showing ${githubData.activity}. 
+Active on GitHub with notable projects including ${githubData.repos.map(r => r.name).join(' and ')}, showing ${githubData.activity}. 
 
 Key interests span ${linkedInData.interests.join(', ')}, with particular emphasis on practical implementations and research applications.`;
 };

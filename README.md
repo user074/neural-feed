@@ -68,7 +68,7 @@ npm run dev
 ## Architecture
 
 ### Frontend
-- **Next.js 14** with App Router
+- **Next.js 15** with App Router
 - **React** for UI components
 - **TypeScript** for type safety
 - **Tailwind CSS** for styling

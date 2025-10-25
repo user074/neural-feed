@@ -86,7 +86,10 @@ export default function Home() {
                 addLog(data.message, 'error');
               }
             } catch (e) {
-              // Skip invalid JSON
+              // Skip invalid JSON lines (e.g., empty lines or partial chunks)
+              if (process.env.NODE_ENV === 'development') {
+                console.debug('Skipped invalid JSON chunk:', line);
+              }
             }
           }
         }

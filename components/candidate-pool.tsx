@@ -10,6 +10,7 @@ const sourceStyles: Record<CandidatePoolItem['source'], string> = {
   hn: 'text-amber-300',
   news: 'text-sky-300',
   github: 'text-emerald-300',
+  x: 'text-indigo-300',
 };
 
 export function CandidatePool({ pool, remainder }: CandidatePoolProps) {
@@ -35,7 +36,7 @@ export function CandidatePool({ pool, remainder }: CandidatePoolProps) {
       <header className="mb-4">
         <h2 className="text-xl font-semibold text-white">Full Candidate Pool</h2>
         <p className="text-sm text-slate-400">
-          Includes every item fetched from ArXiv, Hacker News, and news/blog sources.
+          Includes every item fetched from ArXiv, Hacker News, X.com, and news/blog sources.
         </p>
       </header>
       <div className="space-y-6">

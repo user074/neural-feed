@@ -49,6 +49,7 @@ interface SourceQueryPlan {
   arxiv: string[];
   hn: string[];
   news: string[];
+  x: string[];
 }
 
 interface PlanResult {
@@ -231,41 +232,57 @@ async function fetchSearchResults(name: string): Promise<SearchResult[]> {
   }
 
   try {
-    const url = new URL('https://www.googleapis.com/customsearch/v1');
-    url.searchParams.set('key', env.googleSearchKey);
-    url.searchParams.set('cx', env.googleSearchCx);
-    url.searchParams.set('q', name);
-    url.searchParams.set('num', '10');
-    url.searchParams.set('safe', 'off');
-
-    const response = await fetchJson<{
-      items?: Array<{
-        title?: string;
-        link?: string;
-        snippet?: string;
-      }>;
-    }>(url.toString());
-
-    const results = response.items ?? [];
     const unique = new Map<string, SearchResult>();
-    for (const result of results) {
-      if (!result.link) continue;
+    const trimmed = name.trim();
+    const queries = [name];
+    if (trimmed.length > 0) {
+      queries.push(`${trimmed} site:x.com`);
+    }
+
+    for (const query of queries) {
+      const url = new URL('https://www.googleapis.com/customsearch/v1');
+      url.searchParams.set('key', env.googleSearchKey);
+      url.searchParams.set('cx', env.googleSearchCx);
+      url.searchParams.set('q', query);
+      url.searchParams.set('num', '10');
+      url.searchParams.set('safe', 'off');
+
       try {
-        const normalized = new URL(result.link).toString();
-        if (normalized.includes('linkedin.com')) {
-          continue;
+        const response = await fetchJson<{
+          items?: Array<{
+            title?: string;
+            link?: string;
+            snippet?: string;
+          }>;
+        }>(url.toString());
+
+        const results = response.items ?? [];
+        for (const result of results) {
+          if (!result.link) continue;
+          try {
+            const normalized = new URL(result.link).toString();
+            if (normalized.includes('linkedin.com')) {
+              continue;
+            }
+            if (!unique.has(normalized)) {
+              unique.set(normalized, {
+                title: result.title ?? normalized,
+                url: normalized,
+                description: result.snippet ?? '',
+              });
+            }
+          } catch {
+            continue;
+          }
+          if (unique.size >= 12) break;
         }
-        if (!unique.has(normalized)) {
-          unique.set(normalized, {
-            title: result.title ?? normalized,
-            url: normalized,
-            description: result.snippet ?? '',
-          });
-        }
-      } catch {
-        continue;
+      } catch (error) {
+        console.error('[discovery] fetchSearchResults query failed', query, error);
       }
-      if (unique.size >= 12) break;
+
+      if (unique.size >= 12) {
+        break;
+      }
     }
     return Array.from(unique.values());
   } catch (error) {
@@ -461,12 +478,17 @@ function defaultSourceQueries(profile: ProfileCardData): PlanResult {
     primary.map(keyword => `${keyword} interview`).concat(queryHints.map(q => `${q} blog post`)),
     4,
   );
+  const x = uniqueStrings(
+    primary.map(keyword => `${keyword} insights`).concat(queryHints.map(q => `${q} commentary`)),
+    4,
+  );
 
   return {
     plan: {
       arxiv,
       hn,
       news,
+      x,
     },
     mode: 'fallback',
   };
@@ -491,7 +513,8 @@ async function generateSourceQueries(profile: ProfileCardData): Promise<PlanResu
   const template = `{
   "arxiv": ["..."],
   "hn": ["..."],
-  "news": ["..."]
+  "news": ["..."],
+  "x": ["..."]
 }`;
 
   const userPrompt = `Given the profile below, craft focused search queries for each source so we retrieve high-signal items. Keep each array to at most 4 entries. Return JSON only in the schema:
@@ -508,7 +531,7 @@ ${profileContext}`;
         {
           role: 'system',
           content:
-            'You generate targeted search queries for different content sources (arxiv, hn, github, news) based on a profile.',
+            'You generate targeted search queries for different content sources (arxiv, hn, news, x.com) based on a profile. The queries should be specific to the profile and the sources to recommend the best content.',
         },
         { role: 'user', content: userPrompt },
       ],
@@ -526,6 +549,7 @@ ${profileContext}`;
         arxiv: uniqueStrings(parsed.arxiv ?? [], 4),
         hn: uniqueStrings(parsed.hn ?? [], 4),
         news: uniqueStrings(parsed.news ?? [], 4),
+        x: uniqueStrings(parsed.x ?? [], 4),
       },
       mode: 'llm',
     };
@@ -1052,7 +1076,7 @@ async function buildProfileCard(name: string, docs: HarvestSnippet[]): Promise<P
   // "summary": "string<=80w",
 
   const schema = `{
-  "summary": "string. a comprehensive paragraph",
+  "summary": "string. a factual based comprehensive psychological profile of the person",
   "keywords": ["k1","k2","k3"],
   "queries": ["q1","q2","q3"],
   "preferences": {"depth":"theory|practice|mixed","format":"code|essay|video|mixed","novelty":"low|medium|high"},
@@ -1068,7 +1092,7 @@ ${docBlocks}`;
   try {
     const response = await openaiClient.responses.create({
       model: env.openaiModelProfile,
-      temperature: 0.5,
+      temperature: 0.3,
       input: [
         {
           role: 'system',
@@ -1305,7 +1329,7 @@ async function fetchNewsArticles(query: string, count = 5): Promise<CandidateCon
       const block = match[1];
       const linkMatch = /<link>([^<]+)<\/link>/i.exec(block);
       const title = extractTagContent(block, 'title') || 'News article';
-      const description = extractTagContent(block, 'description');
+      const description = stripHtml(extractTagContent(block, 'description') ?? '');
       const pubDate = extractTagContent(block, 'pubDate');
       const urlValue = linkMatch ? decodeEntities(linkMatch[1]) : '';
       if (!urlValue) continue;
@@ -1322,6 +1346,60 @@ async function fetchNewsArticles(query: string, count = 5): Promise<CandidateCon
     return items;
   } catch (error) {
     console.error('[feed] fetchNewsArticles failed', error);
+    return [];
+  }
+}
+
+async function fetchXPosts(query: string, count = 5): Promise<CandidateContent[]> {
+  if (!env.googleSearchKey || !env.googleSearchCx) {
+    return [];
+  }
+
+  try {
+    const url = new URL('https://www.googleapis.com/customsearch/v1');
+    url.searchParams.set('key', env.googleSearchKey);
+    url.searchParams.set('cx', env.googleSearchCx);
+    url.searchParams.set('q', `site:x.com ${query}`);
+    url.searchParams.set('num', String(Math.min(count * 2, 10)));
+    url.searchParams.set('safe', 'off');
+
+    const response = await fetchJson<{
+      items?: Array<{
+        title?: string;
+        link?: string;
+        snippet?: string;
+      }>;
+    }>(url.toString());
+
+    const results = response.items ?? [];
+    const items: CandidateContent[] = [];
+    const seen = new Set<string>();
+
+    for (const result of results) {
+      if (!result.link) continue;
+      try {
+        const normalized = new URL(result.link).toString();
+        if (seen.has(normalized)) continue;
+        seen.add(normalized);
+
+        items.push({
+          id: `x-${Buffer.from(normalized).toString('base64').slice(0, 10)}`,
+          source: 'x',
+          title: result.title ?? normalized,
+          snippet: truncate(result.snippet ?? result.title ?? '', 240),
+          url: normalized,
+          date: new Date().toISOString().slice(0, 10),
+        });
+
+        if (items.length >= count) break;
+      } catch {
+        continue;
+      }
+    }
+
+    return items;
+  } catch (error) {
+    console.error('[feed] fetchXPosts failed', error);
     return [];
   }
 }
@@ -1352,6 +1430,9 @@ async function gatherCandidateContent(profile: ProfileCardData): Promise<Candida
   for (const query of plan.news.slice(0, 4)) {
     collectors.push(fetchNewsArticles(query, 3));
   }
+  for (const query of plan.x.slice(0, 4)) {
+    collectors.push(fetchXPosts(query, 3));
+  }
 
   const results = await Promise.allSettled(collectors);
   const items: CandidateContent[] = [];
@@ -1377,7 +1458,7 @@ async function gatherCandidateContent(profile: ProfileCardData): Promise<Candida
 
 function rebalanceFeed(
   items: FeedItem[],
-  sources: FeedItem['source'][] = ['arxiv', 'hn', 'news'],
+  sources: FeedItem['source'][] = ['arxiv', 'hn', 'news', 'x'],
   perSourceCap = 3,
 ): FeedItem[] {
   const buckets = new Map<FeedItem['source'], FeedItem[]>();
@@ -1792,13 +1873,13 @@ async function handleRun(
   const exploitation = ranking.exploitation.slice(0, 8);
   const exploitationIds = new Set(exploitation.map(item => item.id));
   const explorationCandidates = ranking.leftovers.filter(item => !exploitationIds.has(item.id));
-  const exploration = rebalanceFeed(explorationCandidates, ['arxiv', 'hn', 'news'], 1).slice(0, 2);
+  const exploration = rebalanceFeed(explorationCandidates, ['arxiv', 'hn', 'news', 'x'], 1).slice(0, 2);
   const explorationIds = new Set(exploration.map(item => item.id));
   const coreFeedPool = [
     ...exploitation,
     ...explorationCandidates.filter(item => !explorationIds.has(item.id)),
   ];
-  const combinedFeed = rebalanceFeed(coreFeedPool, ['arxiv', 'hn', 'news'], 3).slice(0, 10);
+  const combinedFeed = rebalanceFeed(coreFeedPool, ['arxiv', 'hn', 'news', 'x'], 3).slice(0, 10);
   const combinedIds = new Set(combinedFeed.map(item => item.id));
   const remainingPool = ranking.leftovers.filter(
     item => !combinedIds.has(item.id) && !explorationIds.has(item.id),

@@ -11,6 +11,7 @@ const sourceStyles: Record<FeedItem['source'], string> = {
   hn: 'bg-amber-500/20 text-amber-200 border border-amber-500/40',
   github: 'bg-emerald-500/20 text-emerald-100 border border-emerald-500/40',
   news: 'bg-sky-500/20 text-sky-100 border border-sky-500/40',
+  x: 'bg-indigo-500/20 text-indigo-200 border border-indigo-500/40',
 };
 
 const sourceLabel: Record<FeedItem['source'], string> = {
@@ -18,6 +19,7 @@ const sourceLabel: Record<FeedItem['source'], string> = {
   hn: 'HN',
   github: 'GH',
   news: 'News',
+  x: 'X',
 };
 
 export function FeedList({ items, explorationItems = [], onDeepen }: FeedListProps) {

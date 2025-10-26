@@ -46,7 +46,7 @@ export interface ProfileCardData {
   preferenceNotes?: string;
 }
 
-export type FeedSource = 'arxiv' | 'hn' | 'github' | 'news';
+export type FeedSource = 'arxiv' | 'hn' | 'github' | 'news' | 'x';
 
 export interface FeedItem {
   id: string;

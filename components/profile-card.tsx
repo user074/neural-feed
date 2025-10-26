@@ -70,7 +70,7 @@ export function ProfileCard({ profile }: ProfileCardProps) {
     <section className="rounded-2xl border border-slate-700/60 bg-slate-950/70 p-6 shadow-lg">
       <header className="mb-4 space-y-1">
         <h2 className="text-xl font-semibold text-white">Profile</h2>
-        <p className="text-sm text-slate-400">Strictly factual — capped at 80 words.</p>
+        <p className="text-sm text-slate-400">Summarized from public info.</p>
       </header>
       <p className="text-base leading-relaxed text-slate-200">{profile.summary}</p>
 
